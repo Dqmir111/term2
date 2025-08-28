@@ -45,7 +45,12 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             backdrop-filter: blur(10px);
             text-align: center;
+            transition: transform 0.8s;
             display: none;
+        }
+        
+        .terminal.flipped {
+            transform: rotate(180deg);
         }
         
         .screen {
@@ -147,6 +152,31 @@
             display: block;
         }
         
+        .payment-options {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+        }
+        
+        .payment-option {
+            padding: 15px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            transition: all 0.3s;
+            flex: 1;
+            margin: 0 10px;
+        }
+        
+        .payment-option.active {
+            background: rgba(0, 176, 155, 0.3);
+            box-shadow: 0 0 15px rgba(0, 176, 155, 0.5);
+        }
+        
+        .payment-option:hover {
+            transform: translateY(-3px);
+        }
+        
         .countdown {
             font-size: 20px;
             margin: 15px 0;
@@ -210,6 +240,24 @@
             margin: 15px 0;
             color: #ffeaa7;
             text-shadow: 0 0 15px rgba(255, 234, 167, 0.5);
+        }
+        
+        .flip-button {
+            background: linear-gradient(to right, #6a11cb, #2575fc);
+            margin-top: 10px;
+            padding: 12px;
+            font-size: 16px;
+        }
+        
+        .contactless-icon {
+            font-size: 40px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
         }
         
         .checkmark {
@@ -294,7 +342,48 @@
                 <div id="amount-screen">
                     <div class="status">Введите сумму оплаты в рублях</div>
                     <input type="number" id="amount-input" placeholder="0 ₽" min="1" onkeypress="return isNumberKey(event)">
+                    
+                    <div class="payment-options">
+                        <div class="payment-option active" id="card-option" onclick="selectPayment('card')">
+                            💳 Картой
+                        </div>
+                        <div class="payment-option" id="qr-option" onclick="selectPayment('qr')">
+                            📱 QR-код
+                        </div>
+                    </div>
+                    
                     <button onclick="processPayment()">ПРОДОЛЖИТЬ</button>
+                </div>
+                
+                <div id="card-wait-screen" class="hidden">
+                    <div class="card-icon">💳</div>
+                    <div class="status">Поднесите карту к терминалу</div>
+                    <div class="contactless-icon">📱</div>
+                    <div class="amount-display" id="wait-amount"></div>
+                </div>
+                
+                <div id="card-processing-screen" class="hidden">
+                    <div class="status">Подключение к серверу...</div>
+                </div>
+                
+                <div id="card-bank-screen" class="hidden">
+                    <div class="status">Связь с банком...</div>
+                </div>
+                
+                <div id="card-pin-screen" class="hidden">
+                    <div class="card-icon">💳</div>
+                    <div class="status">Введите PIN-код карты</div>
+                    <div class="pin-container">
+                        <input type="password" maxlength="1" class="pin-digit" id="pin1" oninput="moveToNext(1)" onkeypress="return isNumberKey(event)">
+                        <input type="password" maxlength="1" class="pin-digit" id="pin2" oninput="moveToNext(2)" onkeypress="return isNumberKey(event)">
+                        <input type="password" maxlength="1" class="pin-digit" id="pin3" oninput="moveToNext(3)" onkeypress="return isNumberKey(event)">
+                        <input type="password" maxlength="1" class="pin-digit" id="pin4" oninput="processPin()" onkeypress="return isNumberKey(event)">
+                    </div>
+                    <div class="amount-display" id="pin-amount"></div>
+                </div>
+                
+                <div id="card-final-processing" class="hidden">
+                    <div class="status">Связь с банком...</div>
                 </div>
                 
                 <div id="qr-screen" class="hidden">
@@ -313,14 +402,6 @@
                     <div class="payment-id" id="payment-id-display"></div>
                 </div>
                 
-                <div id="processing-screen" class="hidden">
-                    <div class="status">Подключение к серверу...</div>
-                </div>
-                
-                <div id="bank-screen" class="hidden">
-                    <div class="status">Связь с банком...</div>
-                </div>
-                
                 <div id="success-screen" class="hidden">
                     <svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
                         <circle class="checkmark-circle" cx="26" cy="26" r="25" fill="none"/>
@@ -333,6 +414,8 @@
             </div>
         </div>
         
+        <button class="flip-button" onclick="flipTerminal()">Повернуть экран</button>
+        
         <div class="footer">
             © 2025 Платежная система | Безопасные транзакции
         </div>
@@ -341,6 +424,7 @@
     <script>
         const TERMINAL_PASSWORD = "0902";
         let paymentAmount = 0;
+        let paymentMethod = 'card';
         let countdownInterval;
         let timeLeft = 60;
         let paymentId = '';
@@ -419,6 +503,12 @@
             return true;
         }
         
+        function selectPayment(method) {
+            paymentMethod = method;
+            document.getElementById('card-option').classList.toggle('active', method === 'card');
+            document.getElementById('qr-option').classList.toggle('active', method === 'qr');
+        }
+        
         function processPayment() {
             paymentAmount = document.getElementById('amount-input').value;
             
@@ -427,7 +517,57 @@
                 return;
             }
             
-            showQRScreen();
+            if (paymentMethod === 'qr') {
+                showQRScreen();
+            } else {
+                showCardWaitScreen();
+            }
+        }
+        
+        function showCardWaitScreen() {
+            // Переключаем экраны
+            document.getElementById('amount-screen').classList.add('hidden');
+            document.getElementById('card-wait-screen').classList.remove('hidden');
+            
+            // Устанавливаем сумму
+            document.getElementById('wait-amount').textContent = paymentAmount + ' ₽';
+            
+            // Имитация ожидания карты
+            setTimeout(() => {
+                document.getElementById('card-wait-screen').classList.add('hidden');
+                document.getElementById('card-processing-screen').classList.remove('hidden');
+                
+                setTimeout(() => {
+                    document.getElementById('card-processing-screen').classList.add('hidden');
+                    document.getElementById('card-bank-screen').classList.remove('hidden');
+                    
+                    setTimeout(() => {
+                        document.getElementById('card-bank-screen').classList.add('hidden');
+                        showCardPinScreen();
+                    }, 1000);
+                }, 3000);
+            }, 3000);
+        }
+        
+        function showCardPinScreen() {
+            document.getElementById('card-pin-screen').classList.remove('hidden');
+            document.getElementById('pin-amount').textContent = paymentAmount + ' ₽';
+            document.getElementById('pin1').focus();
+        }
+        
+        function processPin() {
+            const pin4 = document.getElementById('pin4');
+            if (pin4.value.length === 1) {
+                // Все 4 цифры введены
+                document.getElementById('card-pin-screen').classList.add('hidden');
+                document.getElementById('card-final-processing').classList.remove('hidden');
+                
+                // Имитация связи с банком после ввода PIN
+                setTimeout(() => {
+                    document.getElementById('card-final-processing').classList.add('hidden');
+                    showSuccessScreen();
+                }, 3000);
+            }
         }
         
         function showQRScreen() {
@@ -459,7 +599,7 @@
             document.getElementById('payment-id-display').textContent = `ID: ${paymentId}`;
             
             // Создаем URL для успешной оплаты
-            const successUrl = `${window.location.origin}${window.location.pathname}?success=true&amount=${paymentAmount}&id=${paymentId}`;
+            const successUrl = `${window.location.href.split('?')[0]}?success=true&amount=${paymentAmount}&id=${paymentId}`;
             
             // Создаем QR-код
             try {
@@ -477,6 +617,23 @@
                 );
             } catch (error) {
                 console.error('Ошибка при создании QR-кода:', error);
+                // Альтернативный вариант
+                document.getElementById('qrcode').innerHTML = `
+                    <div style="width:180px; height:180px; display:flex; align-items:center; justify-content:center; background:#fff;">
+                        <div style="text-align:center; color:#000; font-weight:bold;">
+                            Сумма: ${paymentAmount} ₽
+                        </div>
+                    </div>
+                `;
+            }
+        }
+        
+        function moveToNext(current) {
+            const currentInput = document.getElementById('pin' + current);
+            if (currentInput.value.length === 1) {
+                if (current < 4) {
+                    document.getElementById('pin' + (current + 1)).focus();
+                }
             }
         }
         
@@ -517,6 +674,7 @@
         
         function showSuccessScreen() {
             document.getElementById('qr-screen').classList.add('hidden');
+            document.getElementById('card-final-processing').classList.add('hidden');
             document.getElementById('success-screen').classList.remove('hidden');
             document.getElementById('success-amount').textContent = paymentAmount + ' ₽';
         }
@@ -524,12 +682,27 @@
         function resetToAmountScreen() {
             clearInterval(countdownInterval);
             document.getElementById('qr-screen').classList.add('hidden');
+            document.getElementById('card-wait-screen').classList.add('hidden');
+            document.getElementById('card-processing-screen').classList.add('hidden');
+            document.getElementById('card-bank-screen').classList.add('hidden');
+            document.getElementById('card-pin-screen').classList.add('hidden');
+            document.getElementById('card-final-processing').classList.add('hidden');
             document.getElementById('success-screen').classList.add('hidden');
             document.getElementById('amount-screen').classList.remove('hidden');
             
             // Сбрасываем введенную сумму
             document.getElementById('amount-input').value = '';
             document.getElementById('amount-input').focus();
+            
+            // Сбрасываем PIN
+            document.getElementById('pin1').value = '';
+            document.getElementById('pin2').value = '';
+            document.getElementById('pin3').value = '';
+            document.getElementById('pin4').value = '';
+        }
+        
+        function flipTerminal() {
+            document.getElementById('terminal').classList.toggle('flipped');
         }
         
         // Автофокус на поле ввода пароля
